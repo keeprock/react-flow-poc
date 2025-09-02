@@ -9,6 +9,8 @@ import ReactFlow, {
   MarkerType,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { useCanvasStore } from './canvasStore'
+import { useHistoryStore } from './historyStore'
 
 const initialNodes = [
   { id: 'n1', position: { x: 0, y: 0 }, data: { label: 'Intent' }, type: 'input' },
@@ -36,12 +38,22 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
   const [showLoader, setShowLoader] = useState(false)
   const [loaderText, setLoaderText] = useState('')
-  const [snap, setSnap] = useState(true)
+  const snap = useCanvasStore((s) => s.snap)
+  const toggleSnap = useCanvasStore((s) => s.toggleSnap)
+  const grid = useCanvasStore((s) => s.grid)
+  const lineType = useCanvasStore((s) => s.lineType)
+  const showMiniMap = useCanvasStore((s) => s.showMiniMap)
+  const showControls = useCanvasStore((s) => s.showControls)
+  const setLineType = useCanvasStore((s) => s.setLineType)
   const [shiftPressed, setShiftPressed] = useState(false)
 
   const rfRef = useRef(null)
   const instanceRef = useRef(null)
   const idRef = useRef(5)
+  const nodesRef = useRef(nodes)
+  const edgesRef = useRef(edges)
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
+  useEffect(() => { edgesRef.current = edges }, [edges])
 
   useEffect(() => {
     const down = (e) => { if (e.key === 'Shift') setShiftPressed(true) }
@@ -51,16 +63,53 @@ export default function App() {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
   }, [])
 
+  // init history once
+  useEffect(() => {
+    useHistoryStore.getState().init({ nodes: nodesRef.current, edges: edgesRef.current })
+    // no deps: инициализируем один раз на монтировании
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const onInit = useCallback((rf) => {
     instanceRef.current = rf
     requestAnimationFrame(() => rf.fitView({ padding: 0.2 }))
   }, [])
 
+  // Hotkeys: Undo/Redo
+  useEffect(() => {
+    const onKey = (e) => {
+      const inEditable = e.target.closest?.('input, textarea, [contenteditable="true"]')
+      if (inEditable) return
+      const meta = e.ctrlKey || e.metaKey
+      if (!meta) return
+      const lower = e.key.toLowerCase()
+      if (lower === 'z') {
+        e.preventDefault()
+        const snap = e.shiftKey
+          ? useHistoryStore.getState().redo()
+          : useHistoryStore.getState().undo()
+        if (snap) { setNodes(snap.nodes); setEdges(snap.edges) }
+      } else if (lower === 'y') {
+        e.preventDefault()
+        const snap = useHistoryStore.getState().redo()
+        if (snap) { setNodes(snap.nodes); setEdges(snap.edges) }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [setNodes, setEdges])
+
   const onConnect = useCallback(
-    (params) => setEdges((eds) =>
-      addEdge({ ...params, type: shiftPressed ? 'straight' : 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed } }, eds)
-    ),
-    [setEdges, shiftPressed]
+    (params) =>
+      setEdges((eds) => {
+        const newEdges = addEdge(
+          { ...params, type: shiftPressed ? 'straight' : lineType, markerEnd: { type: MarkerType.ArrowClosed } },
+          eds
+        )
+        useHistoryStore.getState().commit({ nodes: nodesRef.current, edges: newEdges })
+        return newEdges
+      }),
+    [setEdges, shiftPressed, lineType]
   )
 
   const addNode = useCallback(() => {
@@ -75,7 +124,11 @@ export default function App() {
       position = { x: center.x - 60, y: center.y - 20 }
     }
 
-    setNodes((nds) => nds.concat({ id, position, data: { label: `Node ${id}` }, draggable: true }))
+    setNodes((nds) => {
+      const newNodes = nds.concat({ id, position, data: { label: `Node ${id}` }, draggable: true })
+      useHistoryStore.getState().commit({ nodes: newNodes, edges: edgesRef.current })
+      return newNodes
+    })
   }, [setNodes])
 
   const fit = useCallback(() => { instanceRef.current?.fitView({ padding: 0.2 }) }, [])
@@ -110,6 +163,7 @@ export default function App() {
       }
       setNodes(parsed.nodes)
       setEdges(parsed.edges)
+      useHistoryStore.getState().commit({ nodes: parsed.nodes, edges: parsed.edges })
       closeLoader()
       requestAnimationFrame(() => fit())
     } catch (e) {
@@ -126,6 +180,7 @@ export default function App() {
         const parsed = JSON.parse(String(reader.result))
         setNodes(parsed.nodes || [])
         setEdges(parsed.edges || [])
+        useHistoryStore.getState().commit({ nodes: parsed.nodes || [], edges: parsed.edges || [] })
         fit()
       } catch {
         alert('Файл не похож на JSON графа')
@@ -134,6 +189,17 @@ export default function App() {
     reader.readAsText(f)
     e.target.value = ''
   }, [setNodes, setEdges, fit])
+
+  const canUndo = useHistoryStore((s) => s.canUndo)
+  const canRedo = useHistoryStore((s) => s.canRedo)
+  const doUndo = useCallback(() => {
+    const snap = useHistoryStore.getState().undo()
+    if (snap) { setNodes(snap.nodes); setEdges(snap.edges) }
+  }, [setNodes, setEdges])
+  const doRedo = useCallback(() => {
+    const snap = useHistoryStore.getState().redo()
+    if (snap) { setNodes(snap.nodes); setEdges(snap.edges) }
+  }, [setNodes, setEdges])
 
   return (
     <div className="app">
@@ -149,7 +215,25 @@ export default function App() {
             <input type="file" accept="application/json" className="hidden-input" onChange={onFile} />
           </label>
           <ToolbarButton onClick={openLoader} title="Вставить JSON">Paste JSON</ToolbarButton>
-          <ToolbarButton onClick={() => setSnap((s) => !s)} title="Вкл/выкл привязку к сетке">
+          <ToolbarButton
+            onClick={() => setLineType(lineType === 'smoothstep' ? 'straight' : 'smoothstep')}
+            title="Переключить тип линий"
+          >
+            Line: {lineType}
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => useCanvasStore.getState().toggleMiniMap()}
+            title="MiniMap On/Off"
+          >
+            MiniMap: {showMiniMap ? 'On' : 'Off'}
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => useCanvasStore.getState().toggleControls()}
+            title="Controls On/Off"
+          >
+            Controls: {showControls ? 'On' : 'Off'}
+          </ToolbarButton>
+          <ToolbarButton onClick={toggleSnap} title="Вкл/выкл привязку к сетке">
             Snap: {snap ? 'On' : 'Off'}
           </ToolbarButton>
           <span className="hint">Shift: {shiftPressed ? 'STRAIGHT' : 'SMOOTH'}</span>
@@ -164,15 +248,26 @@ export default function App() {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onInit={onInit}
+          onNodeDragStop={() =>
+            useHistoryStore.getState().commit({ nodes: nodesRef.current, edges: edgesRef.current })
+          }
           nodesDraggable
           snapToGrid={snap}
-          snapGrid={[16, 16]}
-          connectionLineType={shiftPressed ? 'straight' : 'smoothstep'}
+          snapGrid={grid}
+          connectionLineType={shiftPressed ? 'straight' : lineType}
           fitView
         >
-          <MiniMap pannable zoomable className="minimap" />
-          <Controls showInteractive={false} />
+          {showMiniMap && <MiniMap pannable zoomable className="minimap" />}
+          {showControls && <Controls showInteractive={false} />}
           <Background gap={16} />
+          <div style={{ position: 'absolute', right: 12, bottom: 12, display: 'flex', gap: 8, zIndex: 5 }}>
+            <button className="btn btn-ghost" onClick={doUndo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
+              Undo
+            </button>
+            <button className="btn" onClick={doRedo} disabled={!canRedo} title="Redo (Ctrl/Cmd+Shift+Z / Ctrl+Y)">
+              Redo
+            </button>
+          </div>
         </ReactFlow>
       </div>
 
