@@ -20,3 +20,9 @@ html, body, #root { height: 100%; margin: 0; }
 .modal-footer { padding: 12px 14px; border-top: 1px solid #eee; display: flex; gap: 8px; justify-content: flex-end; }
 .textarea { width: 100%; height: 260px; padding: 10px; border: 1px solid #ddd; border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .footnote { max-width: 1200px; margin: 6px auto 12px; padding: 0 6px; color: #666; font-size: 12px; }
+
+/* Подсветка выбранного ребра */
+.react-flow__edge.selected path {
+  stroke: #4f8cff !important;
+  stroke-width: 1px;
+}

@@ -11,6 +11,8 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import { useCanvasStore } from './canvasStore'
 import { useHistoryStore } from './historyStore'
+import { useSelectionStore } from './selectionStore'
+import Inspector from './Inspector'
 
 const initialNodes = [
   { id: 'n1', position: { x: 0, y: 0 }, data: { label: 'Intent' }, type: 'input' },
@@ -135,6 +137,46 @@ export default function App() {
 
   const toJson = useCallback(() => ({ nodes, edges }), [nodes, edges])
 
+  // Глубокий merge для node.data/edge.data
+  const mergeData = (prev, patch) => (patch ? { ...(prev || {}), ...patch } : prev)
+
+  const patchNode = useCallback((id, patch, opts = { commit: true }) => {
+    setNodes((nds) => {
+      const newNodes = nds.map((n) => {
+        if (n.id !== id) return n
+        const next = {
+          ...n,
+          ...(patch || {}),
+          data: mergeData(n.data, patch?.data),
+          position: patch?.position ? { ...(n.position || {}), ...patch.position } : n.position,
+        }
+        return next
+      })
+      if (opts.commit !== false) {
+        useHistoryStore.getState().commit({ nodes: newNodes, edges: edgesRef.current })
+      }
+      return newNodes
+    })
+  }, [setNodes])
+
+  const patchEdge = useCallback((id, patch, opts = { commit: true }) => {
+    setEdges((eds) => {
+      const newEdges = eds.map((e) => {
+        if (e.id !== id) return e
+        const next = {
+          ...e,
+          ...(patch || {}),
+          data: mergeData(e.data, patch?.data),
+        }
+        return next
+      })
+      if (opts.commit !== false) {
+        useHistoryStore.getState().commit({ nodes: nodesRef.current, edges: newEdges })
+      }
+      return newEdges
+    })
+  }, [setEdges])
+
   const saveJson = useCallback(() => {
     const data = JSON.stringify(toJson(), null, 2)
     const blob = new Blob([data], { type: 'application/json' })
@@ -251,6 +293,29 @@ export default function App() {
           onNodeDragStop={() =>
             useHistoryStore.getState().commit({ nodes: nodesRef.current, edges: edgesRef.current })
           }
+          onPaneClick={() => useSelectionStore.getState().clearSelection()}
+          onNodeClick={(e, node) => {
+            const st = useSelectionStore.getState()
+            if (e.shiftKey) {
+              const ids = new Set(st.selectedNodeIds)
+              ids.add(node.id)
+              // setFromRF ждёт объекты с id — передаём минимально
+              st.setFromRF(Array.from(ids).map((id) => ({ id })), [])
+            } else {
+              st.setFromRF([node], [])
+            }
+          }}
+          onEdgeClick={(e, edge) => {
+            const st = useSelectionStore.getState()
+            if (e.shiftKey) {
+              const ids = new Set(st.selectedEdgeIds)
+              ids.add(edge.id)
+              st.setFromRF([], Array.from(ids).map((id) => ({ id })))
+            } else {
+              st.setFromRF([], [edge])
+            }
+          }}
+          selectNodesOnDrag={false}
           nodesDraggable
           snapToGrid={snap}
           snapGrid={grid}
@@ -260,8 +325,9 @@ export default function App() {
           {showMiniMap && <MiniMap pannable zoomable className="minimap" />}
           {showControls && <Controls showInteractive={false} />}
           <Background gap={16} />
-          <div style={{ position: 'absolute', right: 12, bottom: 12, display: 'flex', gap: 8, zIndex: 5 }}>
-            <button className="btn btn-ghost" onClick={doUndo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
+          <Inspector nodes={nodes} edges={edges} patchNode={patchNode} patchEdge={patchEdge} />
+          <div style={{ position: 'absolute', right: 12, bottom: 16, display: 'flex', gap: 8, zIndex: 1001 }}>
+            <button className="btn" onClick={doUndo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
               Undo
             </button>
             <button className="btn" onClick={doRedo} disabled={!canRedo} title="Redo (Ctrl/Cmd+Shift+Z / Ctrl+Y)">
