@@ -183,7 +183,7 @@ export default function App() {
         useHistoryStore.getState().commit({ nodes: parsed.nodes || [], edges: parsed.edges || [] })
         fit()
       } catch {
-        alert('Файл не похож на JSON графа')
+        alert('Файл не похож на JSON граф')
       }
     }
     reader.readAsText(f)
