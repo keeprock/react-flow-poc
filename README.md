@@ -1,7 +1,7 @@
 
 # ReactFlow Mini PoC
 
-Локальный минимальный проект на React + ReactFlow.
+Локальный минимальный проект на React + ReactFlow + Zustand.
 
 ## Запуск
 
