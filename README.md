@@ -3,6 +3,8 @@
 
 Локальный минимальный проект на React + ReactFlow + Zustand.
 
+https://react-flow-poc-six.vercel.app/
+
 ## Запуск
 
 ```bash
