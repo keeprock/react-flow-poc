@@ -1,17 +1,9 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react'
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  addEdge,
-  useEdgesState,
-  useNodesState,
-  MarkerType,
-} from 'reactflow'
+import React, {useCallback, useEffect, useRef, useState} from 'react'
+import ReactFlow, {addEdge, Background, Controls, MarkerType, MiniMap, useEdgesState, useNodesState,} from 'reactflow'
 import 'reactflow/dist/style.css'
-import { useCanvasStore } from './canvasStore'
-import { useHistoryStore } from './historyStore'
-import { useSelectionStore } from './selectionStore'
+import {useCanvasStore} from './canvasStore'
+import {useHistoryStore} from './historyStore'
+import {useSelectionStore} from './selectionStore'
 import Inspector from './Inspector'
 
 const initialNodes = [
@@ -144,13 +136,12 @@ export default function App() {
     setNodes((nds) => {
       const newNodes = nds.map((n) => {
         if (n.id !== id) return n
-        const next = {
+        return {
           ...n,
           ...(patch || {}),
           data: mergeData(n.data, patch?.data),
-          position: patch?.position ? { ...(n.position || {}), ...patch.position } : n.position,
+          position: patch?.position ? {...(n.position || {}), ...patch.position} : n.position,
         }
-        return next
       })
       if (opts.commit !== false) {
         useHistoryStore.getState().commit({ nodes: newNodes, edges: edgesRef.current })
@@ -163,12 +154,11 @@ export default function App() {
     setEdges((eds) => {
       const newEdges = eds.map((e) => {
         if (e.id !== id) return e
-        const next = {
+        return {
           ...e,
           ...(patch || {}),
           data: mergeData(e.data, patch?.data),
         }
-        return next
       })
       if (opts.commit !== false) {
         useHistoryStore.getState().commit({ nodes: nodesRef.current, edges: newEdges })
@@ -252,7 +242,7 @@ export default function App() {
           <ToolbarButton onClick={fit} title="Подогнать вид">Fit</ToolbarButton>
           <ToolbarButton onClick={saveJson} title="Скачать JSON">Save JSON</ToolbarButton>
           <ToolbarButton onClick={copyJson} title="Скопировать JSON">Copy JSON</ToolbarButton>
-          <label className="btn btn-ghost" title="Загрузить JSON из файла">
+          <label className="btn" title="Загрузить JSON из файла">
             Load file
             <input type="file" accept="application/json" className="hidden-input" onChange={onFile} />
           </label>
